@@ -17,6 +17,9 @@ from kornia.losses import focal_loss
 
 import segmentation_models_pytorch.segmentation_models_pytorch as smp
 
+import time
+import matplotlib.pyplot as plt
+
 def train_net(net,
               device,
               training_set,
@@ -28,10 +31,10 @@ def train_net(net,
               save_cp=True,
               img_scale=1,
               n_classes=3,
-              n_channels=3, 
+              n_channels=3,
               augmentation_ratio = 0):
 
-    train = training_set 
+    train = training_set
     val = validation_set
     n_train = len(train)
     n_val = len(val)
@@ -65,6 +68,9 @@ def train_net(net,
     for epoch in range(epochs):
         net.train()
         epoch_loss = 0
+        score_train_sum = 0
+        score_val_sum = 0
+
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
             for batch in train_loader:
                 imgs = batch['image']
@@ -82,8 +88,8 @@ def train_net(net,
                 mask_type = torch.float32 if n_classes == 1 else torch.long
                 true_masks = true_masks.to(device=device, dtype=mask_type)
 
-                masks_pred = net(imgs)                         
-                
+                masks_pred = net(imgs)
+
                 # Compute loss
                 loss = focal_loss(masks_pred, true_masks.squeeze(1), alpha=0.25, gamma = 2, reduction='mean').unsqueeze(0)
                 loss += dice_loss(masks_pred, true_masks.squeeze(1), True, k = 0.75)
@@ -102,13 +108,13 @@ def train_net(net,
                 if global_step % (n_train // (batch_size / (1 + augmentation_ratio))) == 0:
                     for tag, value in net.named_parameters():
                         tag = tag.replace('.', '/')
-                        
+
                         try:
                             writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
                             writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
                         except:
                             pass
-                    
+
                     epoch_score = eval_net(net, train_loader, device)
                     val_score = eval_net(net, val_loader, device)
                     writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
@@ -120,8 +126,8 @@ def train_net(net,
                     else:
                         logging.info('Validation loss: {}'.format(val_score))
                         writer.add_scalar('Dice loss/train', epoch_score, global_step)
-                        writer.add_scalar('Dice loss/test', val_score, global_step)       
-        scheduler.step()         
+                        writer.add_scalar('Dice loss/test', val_score, global_step)
+        scheduler.step()
         if save_cp:
             try:
                 os.mkdir(dir_checkpoint)
@@ -131,6 +137,24 @@ def train_net(net,
             torch.save(net.state_dict(),
                        dir_checkpoint + f'CP_epoch{epoch + 1}.pth')
             logging.info(f'Checkpoint {epoch + 1} saved !')
+        loss_epoch.append(epoch_loss)
+        score_train.append(score_train_sum)
+        score_val.append(score_val_sum)
+    plt.figure()
+    plt.plot(loss_x, loss_epoch)
+    plt.xlabel('epoch')
+    plt.ylabel('epoch_loss')
+    name = r'./loss .png'
+    plt.savefig(name)
+
+    plt.figure()
+    plt.plot(score_x, score_train, 'b-', score_x, score_val, 'g--')
+    plt.xlabel('epoch')
+    plt.ylabel('accuracy')
+    plt.legend(['score_train', 'score_val'])
+    name = r'./accuracy .png'
+    plt.savefig(name)
+    writer.close()
     writer.close()
 
 def get_args():
@@ -141,16 +165,29 @@ def get_args():
     parser.add_argument('-vi', '--validation-images-dir', type=str, default=None, help='Validation images directory', dest='val_img_dir')
     parser.add_argument('-vm', '--validation-masks-dir', type=str, default=None, help='Validation masks directory', dest='val_mask_dir')
     parser.add_argument('-enc', '--encoder', metavar='ENC', type=str, default='timm-efficientnet-b0', help='Encoder to be used', dest='encoder')
-    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=150, help='Number of epochs', dest='epochs')
+    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=20, help='Number of epochs', dest='epochs')
     parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=1, help='Batch size', dest='batchsize')
-    parser.add_argument('-l', '--learning-rate', metavar='LR', type=float, nargs='?', default=0.001, help='Learning rate', dest='lr')
+    parser.add_argument('-l', '--learning-rate', metavar='LR', type=float, nargs='?', default=0.0001, help='Learning rate', dest='lr')
     parser.add_argument('-f', '--load', type=str, default=False, help='Load model from a .pth file', dest='load')
     parser.add_argument('-s', '--scale', metavar='S', type=float, default=1, help='Downscaling factor of the images', dest='scale')
     parser.add_argument('-a', '--augmentation-ratio', metavar='AR', type=int, default=0, help='Number of augmentation to be generated for each image in the dataset', dest='augmentation_ratio')
     parser.add_argument('-c', '--dir_checkpoint', type=str, default='checkpoints/', help='Directory to save the checkpoints', dest='dir_checkpoint')
     return parser.parse_args()
 
+
 if __name__ == '__main__':
+    """绘制loss曲线"""
+    tic1 = time.perf_counter()
+    loss_epoch = []
+    loss_x = []
+    for i in range(1, 21):
+        loss_x.append(i)
+    score_train = []
+    score_val = []
+    score_x = []
+    for j in range(1, 21):
+        score_x.append(j)
+    ###############################
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     args = get_args()
 
@@ -167,13 +204,23 @@ if __name__ == '__main__':
     # Instantiate EfficientUNet++ with the specified encoder
     net = smp.EfficientUnetPlusPlus(encoder_name=args.encoder, encoder_weights="imagenet", in_channels=3, classes=n_classes)
 
+    """微调"""
+    model_pretrained = torch.load('./check_path/CP_epoch80_DRIVE40.pth', map_location='cpu')
+    model_pretrained.pop('segmentation_head.0.weight')
+    model_pretrained.pop('segmentation_head.0.bias')
+    # net.load_state_dict(model_pretrained) # 不是一模一样不能直接load
+    net_stae_dict = net.state_dict()
+    net_stae_dict.update(model_pretrained)
+    net.load_state_dict(net_stae_dict)
+    ##############################################
+
     # Freeze encoder weights
     net.encoder.eval()
     for m in net.encoder.modules():
         m.requires_grad_ = False
 
     # Distribute training over GPUs
-    net = nn.DataParallel(net)
+    # net = nn.DataParallel(net)
 
     # Load weights from file
     if args.load:
@@ -188,17 +235,17 @@ if __name__ == '__main__':
 
     # Instantiate datasets
     if args.dataset == 'DRIVE':
-        training_set = RetinaSegmentationDataset(args.train_img_dir if args.train_img_dir is not None else 'DRIVE/training/images/', 
-            args.train_mask_dir if args.train_mask_dir is not None else 'DRIVE/training/1st_manual/', args.scale, 
+        training_set = RetinaSegmentationDataset(args.train_img_dir if args.train_img_dir is not None else 'DRIVE/training/images/',
+            args.train_mask_dir if args.train_mask_dir is not None else 'DRIVE/training/1st_manual/', args.scale,
             augmentation_ratio = args.augmentation_ratio, crop_size=512)
-        validation_set = RetinaSegmentationDataset(args.val_img_dir if args.val_img_dir is not None else 'DRIVE/validation/images/', 
+        validation_set = RetinaSegmentationDataset(args.val_img_dir if args.val_img_dir is not None else 'DRIVE/validation/images/',
             args.val_mask_dir if args.val_mask_dir is not None else 'DRIVE/validation/1st_manual/', args.scale)
         dataset_class = RetinaSegmentationDataset
     elif args.dataset == 'Coronary':
-        training_set = CoronaryArterySegmentationDataset(args.train_img_dir if args.train_img_dir is not None else 'Coronary/train/imgs/', 
-            args.train_mask_dir if args.train_mask_dir is not None else 'Coronary/train/masks/', args.scale, 
+        training_set = CoronaryArterySegmentationDataset(args.train_img_dir if args.train_img_dir is not None else 'Coronary/train/imgs/',
+            args.train_mask_dir if args.train_mask_dir is not None else 'Coronary/train/masks/', args.scale,
             augmentation_ratio = args.augmentation_ratio,) #  crop_size=512
-        validation_set = CoronaryArterySegmentationDataset(args.val_img_dir if args.val_img_dir is not None else 'Coronary/val/imgs/', 
+        validation_set = CoronaryArterySegmentationDataset(args.val_img_dir if args.val_img_dir is not None else 'Coronary/val/imgs/',
             args.val_mask_dir if args.val_mask_dir is not None else 'Coronary/val/masks/', args.scale, mask_suffix='a')
         dataset_class = RetinaSegmentationDataset
     else:
@@ -206,7 +253,7 @@ if __name__ == '__main__':
         exit()
 
     try:
-        train_net(net=net, 
+        train_net(net=net,
                   device=device,
                   training_set=training_set,
                   validation_set=validation_set,
@@ -225,3 +272,6 @@ if __name__ == '__main__':
             sys.exit(0)
         except SystemExit:
             os._exit(0)
+    toc1 = time.perf_counter()
+    shijian1 = toc1 - tic1
+    print(shijian1)
