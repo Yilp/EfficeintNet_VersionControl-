@@ -35,8 +35,8 @@ def train_net(net,
     val = validation_set
     n_train = len(train)
     n_val = len(val)
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
-    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
+    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
+    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
 
     # Sets the effective batch size according to the batch size and the data augmentation ratio
     batch_size = (1 + augmentation_ratio)*batch_size
@@ -135,7 +135,7 @@ def train_net(net,
 
 def get_args():
     parser = argparse.ArgumentParser(description='EfficientUNet++ train script', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-d', '--dataset', type=str, help='Specifies the dataset to be used', dest='dataset', required=True)
+    parser.add_argument('-d', '--dataset', type=str, help='Specifies the dataset to be used', dest='dataset', default='Coronary',required=False)
     parser.add_argument('-ti', '--training-images-dir', type=str, default=None, help='Training images directory', dest='train_img_dir')
     parser.add_argument('-tm', '--training-masks-dir', type=str, default=None, help='Training masks directory', dest='train_mask_dir')
     parser.add_argument('-vi', '--validation-images-dir', type=str, default=None, help='Validation images directory', dest='val_img_dir')
@@ -197,7 +197,7 @@ if __name__ == '__main__':
     elif args.dataset == 'Coronary':
         training_set = CoronaryArterySegmentationDataset(args.train_img_dir if args.train_img_dir is not None else 'Coronary/train/imgs/', 
             args.train_mask_dir if args.train_mask_dir is not None else 'Coronary/train/masks/', args.scale, 
-            augmentation_ratio = args.augmentation_ratio, crop_size=512)
+            augmentation_ratio = args.augmentation_ratio,) #  crop_size=512
         validation_set = CoronaryArterySegmentationDataset(args.val_img_dir if args.val_img_dir is not None else 'Coronary/val/imgs/', 
             args.val_mask_dir if args.val_mask_dir is not None else 'Coronary/val/masks/', args.scale, mask_suffix='a')
         dataset_class = RetinaSegmentationDataset
