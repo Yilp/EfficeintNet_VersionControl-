@@ -203,7 +203,6 @@ if __name__ == '__main__':
 
     # Instantiate EfficientUNet++ with the specified encoder
     net = smp.EfficientUnetPlusPlus(encoder_name=args.encoder, encoder_weights="imagenet", in_channels=3, classes=n_classes)
-
     """微调"""
     model_pretrained = torch.load('./check_path/CP_epoch80_DRIVE40.pth', map_location='cpu')
     model_pretrained.pop('segmentation_head.0.weight')
@@ -212,6 +211,7 @@ if __name__ == '__main__':
     net_stae_dict = net.state_dict()
     net_stae_dict.update(model_pretrained)
     net.load_state_dict(net_stae_dict)
+    net = nn.DataParallel(net)
     ##############################################
 
     # Freeze encoder weights

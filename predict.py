@@ -11,7 +11,7 @@ from utils.dataset import CoronaryArterySegmentationDataset, RetinaSegmentationD
 import segmentation_models_pytorch.segmentation_models_pytorch as smp
 
 from torch.backends import cudnn
-
+from glob import glob
 def predict_img(net, dataset_class, full_img, device, scale_factor=1, n_classes=3):
     net.eval()
 
@@ -46,18 +46,27 @@ def predict_img(net, dataset_class, full_img, device, scale_factor=1, n_classes=
         return full_mask > 0.5
 
 
+default_dataset = 'Coronary'
+default_model = 'check_path/CP_epoch150_300.pth'
+files = os.listdir(r'Coronary\test\imgs')
+default_input = [os.path.join(r'Coronary\test\imgs',file) for file in files]
+default_output = 'Coronary/test/pred'
+
 def get_args():
     parser = argparse.ArgumentParser(description='Predict masks from input images', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-d', '--dataset', type=str, help='Specifies the dataset to be used', dest='dataset', required=True)
-    parser.add_argument('--model', '-m', default='MODEL.pth', metavar='FILE', help="Specify the file in which the model is stored")
-    parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', help='filenames of input images', required=True)
+    parser.add_argument('-d', '--dataset', type=str, help='Specifies the dataset to be used', dest='dataset', required=False
+                        ,default=default_dataset)
+    # parser.add_argument('-d', '--dataset', type=str, help='Specifies the dataset to be used', dest='dataset', required=True)
+    parser.add_argument('--model', '-m', default=default_model, metavar='FILE', help="Specify the file in which the model is stored")
+    # parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', help='filenames of input images', required=True)
+    parser.add_argument('--input', '-i', default=default_input,metavar='INPUT', nargs='+', help='filenames of input images', required=False)
     parser.add_argument('--output', '-o', metavar='INPUT', nargs='+', help='Filenames of ouput images')
     parser.add_argument('--scale', '-s', type=float, help="Scale factor for the input images", default=1)
     parser.add_argument('-enc', '--encoder', metavar='ENC', type=str, default='timm-efficientnet-b0', help='Encoder to be used', dest='encoder')
     return parser.parse_args()
 
 
-def get_output_filenames(args, dataset='DRIVE'):
+def get_output_filenames(args, dataset='Coronary'):
     """
     Validates and/or computes the output path of the segmentation masks to be generated.
     """
@@ -103,7 +112,7 @@ if __name__ == "__main__":
         print("Invalid dataset")
         exit()
     net = smp.EfficientUnetPlusPlus(encoder_name=args.encoder, encoder_weights="imagenet", in_channels=3, classes=n_classes)
-    net = nn.DataParallel(net)
+    # net = nn.DataParallel(net)
 
     logging.info("Loading model {}".format(args.model))
 
